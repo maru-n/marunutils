@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
+
 import numpy as np
 import warnings
+from scipy import sparse
 from sklearn.cluster import DBSCAN
 from sklearn.cluster._dbscan_inner import dbscan_inner
 from sklearn.utils.validation import _check_sample_weight
 from sklearn.neighbors import NearestNeighbors
 
+# modify DBSCAN to save and reuse neighbors data.
 # Original code
 # https://github.com/scikit-learn/scikit-learn/blob/15a949460/sklearn/cluster/_dbscan.py#L148
 
-class MyDBSCAN(DBSCAN):
+class DBSCAN(DBSCAN):
 
-    def fit(self, X, y=None, sample_weight=None):
+    def fit(self, X, y=None, sample_weight=None, neighbors=None):
         X = self._validate_data(X, accept_sparse='csr')
 
         if not self.eps > 0.0:
@@ -30,14 +33,17 @@ class MyDBSCAN(DBSCAN):
                 warnings.simplefilter('ignore', sparse.SparseEfficiencyWarning)
                 X.setdiag(X.diagonal())  # XXX: modifies X's internals in-place
 
-        neighbors_model = NearestNeighbors(
-            radius=self.eps, algorithm=self.algorithm,
-            leaf_size=self.leaf_size, metric=self.metric,
-            metric_params=self.metric_params, p=self.p, n_jobs=self.n_jobs)
-        neighbors_model.fit(X)
-        # This has worst case O(n^2) memory complexity
-        neighborhoods = neighbors_model.radius_neighbors(X,
-                                                         return_distance=False)
+        neighborhoods = neighbors
+        if neighborhoods is None:
+            neighbors_model = NearestNeighbors(
+                radius=self.eps, algorithm=self.algorithm,
+                leaf_size=self.leaf_size, metric=self.metric,
+                metric_params=self.metric_params, p=self.p, n_jobs=self.n_jobs)
+            neighbors_model.fit(X)
+            # This has worst case O(n^2) memory complexity
+            neighborhoods = neighbors_model.radius_neighbors(X,
+                                                            return_distance=False)
+        self.neighbors_ = neighborhoods
 
         if sample_weight is None:
             n_neighbors = np.array([len(neighbors)
@@ -66,6 +72,6 @@ class MyDBSCAN(DBSCAN):
         return self
 
 
-    def fit_predict(self, X, y=None, sample_weight=None):
-        self.fit(X, sample_weight=sample_weight)
+    def fit_predict(self, X, y=None, sample_weight=None, neighbors=None):
+        self.fit(X, sample_weight=sample_weight, neighbors=neighbors)
         return self.labels_
